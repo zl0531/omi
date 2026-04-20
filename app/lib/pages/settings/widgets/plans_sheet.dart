@@ -607,7 +607,6 @@ class _PlansSheetState extends State<PlansSheet> {
         final isPaidPlan =
             sub?.plan == PlanType.unlimited || sub?.plan == PlanType.operator || sub?.plan == PlanType.architect;
         final isUnlimited = isPaidPlan; // backward-compat alias for UI branching
-        final isDeprecated = sub?.deprecated ?? false;
         final isCancelled = sub?.cancelAtPeriodEnd ?? false;
 
         String renewalDate = 'N/A';
@@ -982,44 +981,6 @@ class _PlansSheetState extends State<PlansSheet> {
                                 );
                               }
                             },
-                          ),
-                        ],
-                        // Deprecation notice for legacy Unlimited subscribers
-                        if (isDeprecated) ...[
-                          const SizedBox(height: 16),
-                          Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 16),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                            ),
-                            child: Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.info_outline, color: Colors.orange.shade400, size: 20),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        context.l10n.planUpdate,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  context.l10n.planDeprecationMessage,
-                                  style: TextStyle(color: Colors.grey.shade300, fontSize: 13, height: 1.4),
-                                ),
-                              ],
-                            ),
                           ),
                         ],
                         const SizedBox(height: 24),

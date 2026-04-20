@@ -897,15 +897,6 @@ def get_user_subscription_endpoint(
 
     new_plans_enabled = should_show_new_plans(x_app_platform, x_app_version)
 
-    # Mark deprecated plans
-    if subscription.plan == PlanType.unlimited:
-        subscription.deprecated = True
-        subscription.deprecation_message = (
-            "Your Unlimited plan is being retired. Switch to the Operator plan "
-            "— same great features at $49/mo. Your current plan will continue "
-            "to work in the meantime."
-        )
-
     # Backward-compat: old clients without the `operator` enum value would crash
     # on deserialization. Only send the real plan type to clients that understand it.
     if not new_plans_enabled and subscription.plan == PlanType.operator:
