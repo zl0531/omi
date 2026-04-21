@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectImageMimeType } from "../src/index.js";
+import { detectImageMimeType } from "../src/mime-detect.js";
 
 /**
  * Unit tests for detectImageMimeType — verifies that base64-encoded images
