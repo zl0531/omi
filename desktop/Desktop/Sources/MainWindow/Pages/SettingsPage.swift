@@ -229,6 +229,9 @@ struct SettingsContentView: View {
   @State private var subscriptionError: String?
   @State private var chatUsageQuota: APIClient.ChatUsageQuota?
   @State private var isLoadingChatUsage: Bool = false
+  @State private var overageInfo: OverageInfoResponse?
+  @State private var isLoadingOverage: Bool = false
+  @State private var showOverageExplainer: Bool = false
   @State private var fallbackPlanCatalog: [SubscriptionPlanOption] = []
   @State private var activeCheckoutPriceId: String?
   @State private var selectedPlanIdForCheckout: String?
@@ -1870,7 +1873,137 @@ struct SettingsContentView: View {
 
       chatUsageQuotaCard
 
+      overageCard
+
       byokPromoCard
+    }
+    .sheet(isPresented: $showOverageExplainer) {
+      overageExplainerSheet
+    }
+  }
+
+  @ViewBuilder
+  private var overageCard: some View {
+    if let info = overageInfo, info.isOveragePlan {
+      settingsCard(settingId: "planusage.overage") {
+        VStack(alignment: .leading, spacing: 10) {
+          HStack(spacing: 10) {
+            Image(systemName: info.excessQuestions > 0
+              ? "dollarsign.circle.fill"
+              : "checkmark.circle.fill")
+              .scaledFont(size: 18)
+              .foregroundColor(info.excessQuestions > 0
+                ? OmiColors.warning
+                : OmiColors.success)
+            Text(info.excessQuestions > 0
+              ? "Usage-based overage"
+              : "No overage yet this cycle")
+              .scaledFont(size: 14, weight: .semibold)
+              .foregroundColor(OmiColors.textPrimary)
+            Spacer()
+            if info.excessQuestions > 0 {
+              Text(String(format: "$%.2f", info.overageUsd))
+                .scaledFont(size: 15, weight: .semibold)
+                .foregroundColor(OmiColors.warning)
+                .monospacedDigit()
+            }
+          }
+
+          if info.excessQuestions > 0 {
+            Text(
+              "You've gone \(info.excessQuestions) question\(info.excessQuestions == 1 ? "" : "s") past your plan's \(info.includedQuestions ?? 0) included. We'll bill the overage at end of your cycle."
+            )
+            .scaledFont(size: 12)
+            .foregroundColor(OmiColors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+          } else {
+            Text(
+              "Go over your \(info.includedQuestions ?? 0) included questions and we'll charge real provider cost + \(Int(info.markupPercent))%. No hard cutoff."
+            )
+            .scaledFont(size: 12)
+            .foregroundColor(OmiColors.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+          }
+
+          Button(action: { showOverageExplainer = true }) {
+            HStack(spacing: 4) {
+              Text(info.explainerTitle)
+                .scaledFont(size: 12, weight: .medium)
+              Image(systemName: "info.circle")
+                .scaledFont(size: 11)
+            }
+            .foregroundColor(OmiColors.purplePrimary)
+          }
+          .buttonStyle(.plain)
+        }
+      }
+    } else if isLoadingOverage && overageInfo == nil {
+      // silent while loading — nothing to show
+      EmptyView()
+    }
+  }
+
+  private var overageExplainerSheet: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        HStack {
+          Text(overageInfo?.explainerTitle ?? "How overage billing works")
+            .scaledFont(size: 18, weight: .semibold)
+            .foregroundColor(OmiColors.textPrimary)
+          Spacer()
+          Button(action: { showOverageExplainer = false }) {
+            Image(systemName: "xmark.circle.fill")
+              .scaledFont(size: 20)
+              .foregroundColor(OmiColors.textTertiary)
+          }
+          .buttonStyle(.plain)
+        }
+
+        Text(overageInfo?.explainerBody ?? "")
+          .scaledFont(size: 13)
+          .foregroundColor(OmiColors.textSecondary)
+          .fixedSize(horizontal: false, vertical: true)
+
+        if let info = overageInfo, info.isOveragePlan {
+          Divider().overlay(OmiColors.backgroundQuaternary)
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Your current cycle")
+              .scaledFont(size: 13, weight: .semibold)
+              .foregroundColor(OmiColors.textPrimary)
+            overageExplainerRow("Questions used", value: "\(info.usedQuestions)")
+            overageExplainerRow("Included in plan", value: "\(info.includedQuestions ?? 0)")
+            overageExplainerRow("Over the limit", value: "\(info.excessQuestions)")
+            overageExplainerRow(
+              "Real provider cost",
+              value: String(format: "$%.2f", info.realCostUsd)
+            )
+            overageExplainerRow(
+              "Markup",
+              value: String(format: "%.0f%%", info.markupPercent)
+            )
+            overageExplainerRow(
+              "Overage to bill",
+              value: String(format: "$%.2f", info.overageUsd),
+              emphasized: true
+            )
+          }
+        }
+      }
+      .padding(24)
+    }
+    .frame(minWidth: 440, minHeight: 360)
+  }
+
+  private func overageExplainerRow(_ label: String, value: String, emphasized: Bool = false) -> some View {
+    HStack {
+      Text(label)
+        .scaledFont(size: 12)
+        .foregroundColor(OmiColors.textTertiary)
+      Spacer()
+      Text(value)
+        .scaledFont(size: 12, weight: emphasized ? .semibold : .regular)
+        .foregroundColor(emphasized ? OmiColors.warning : OmiColors.textSecondary)
+        .monospacedDigit()
     }
   }
 
@@ -1948,9 +2081,19 @@ struct SettingsContentView: View {
           }
 
           if !quota.allowed {
-            Text("You've reached this month's limit. Upgrade your plan or wait until the next reset.")
-              .scaledFont(size: 12)
-              .foregroundColor(OmiColors.warning)
+            // Neo / overage-enabled plans keep working past the cap (extra
+            // usage accrues as overage). Show a softer message on those plans;
+            // only show the hard "upgrade" copy on Free and other hard-capped
+            // plans.
+            if let info = overageInfo, info.isOveragePlan {
+              Text("You're past your included limit — extra usage is billed as overage at end of cycle.")
+                .scaledFont(size: 12)
+                .foregroundColor(OmiColors.warning)
+            } else {
+              Text("You've reached this month's limit. Upgrade your plan or wait until the next reset.")
+                .scaledFont(size: 12)
+                .foregroundColor(OmiColors.warning)
+            }
           } else if quota.percent >= 80.0 {
             Text("You're close to your monthly limit.")
               .scaledFont(size: 12)
@@ -6623,6 +6766,7 @@ struct SettingsContentView: View {
       }
     }
     loadChatUsageQuota()
+    loadOverageInfo()
   }
 
   private func loadChatUsageQuota() {
@@ -6633,6 +6777,25 @@ struct SettingsContentView: View {
       await MainActor.run {
         chatUsageQuota = quota
         isLoadingChatUsage = false
+      }
+    }
+  }
+
+  private func loadOverageInfo() {
+    guard !isLoadingOverage else { return }
+    isLoadingOverage = true
+    Task {
+      do {
+        let info = try await APIClient.shared.getOverageInfo()
+        await MainActor.run {
+          overageInfo = info
+          isLoadingOverage = false
+        }
+      } catch {
+        logError("Failed to load overage info", error: error)
+        await MainActor.run {
+          isLoadingOverage = false
+        }
       }
     }
   }
