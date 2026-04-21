@@ -822,7 +822,9 @@ def _byok_unlimited_subscription() -> Subscription:
 
 @router.get('/v1/users/me/subscription', tags=['v1'], response_model=UserSubscriptionResponse)
 def get_user_subscription_endpoint(
-    uid: str = Depends(auth.get_current_user_uid),
+    # Keep reachable even when BYOK fingerprints drift — broken-BYOK users
+    # must still see their plan so they can recover.
+    uid: str = Depends(auth.get_current_user_uid_no_byok_validation),
     x_app_platform: Optional[str] = Header(None, alias='X-App-Platform'),
     x_app_version: Optional[str] = Header(None, alias='X-App-Version'),
 ):
