@@ -74,6 +74,24 @@ function logErr(msg: string): void {
   process.stderr.write(`[acp-bridge] ${msg}\n`);
 }
 
+/**
+ * Detect image MIME type from base64-encoded data by inspecting header bytes.
+ * Exported for testability.
+ */
+export function detectImageMimeType(base64Data: string): string {
+  const header = Buffer.from(base64Data.slice(0, 24), "base64");
+  // WebP: starts with RIFF....WEBP
+  if (header.length >= 12 && header.slice(0, 4).toString("ascii") === "RIFF" && header.slice(8, 12).toString("ascii") === "WEBP") {
+    return "image/webp";
+  }
+  // PNG: starts with 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
+  if (header.length >= 8 && header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4e && header[3] === 0x47 && header[4] === 0x0d && header[5] === 0x0a && header[6] === 0x1a && header[7] === 0x0a) {
+    return "image/png";
+  }
+  // Default: JPEG
+  return "image/jpeg";
+}
+
 // --- OMI tools relay via Unix socket ---
 
 let omiToolsPipePath = "";
@@ -768,13 +786,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     const sendPrompt = async (): Promise<void> => {
       const promptBlocks: Array<Record<string, unknown>> = [];
       if (msg.imageBase64) {
-        const hdr = Buffer.from(msg.imageBase64.slice(0, 24), "base64");
-        let imgMime = "image/jpeg";
-        if (hdr.length >= 12 && hdr.slice(0, 4).toString("ascii") === "RIFF" && hdr.slice(8, 12).toString("ascii") === "WEBP") {
-          imgMime = "image/webp";
-        } else if (hdr.length >= 4 && hdr[0] === 0x89 && hdr[1] === 0x50) {
-          imgMime = "image/png";
-        }
+        const imgMime = detectImageMimeType(msg.imageBase64);
         promptBlocks.push({ type: "image", data: msg.imageBase64, mimeType: imgMime });
       }
       promptBlocks.push({ type: "text", text: fullPrompt });
@@ -1265,14 +1277,7 @@ async function runPiMonoMode(): Promise<void> {
           // Build prompt blocks — include screenshot if available
           const promptBlocks: PromptBlock[] = [];
           if (qm.imageBase64) {
-            // Detect image format from base64-decoded header bytes
-            const header = Buffer.from(qm.imageBase64.slice(0, 24), "base64");
-            let mimeType = "image/jpeg";
-            if (header.length >= 12 && header.slice(0, 4).toString("ascii") === "RIFF" && header.slice(8, 12).toString("ascii") === "WEBP") {
-              mimeType = "image/webp";
-            } else if (header.length >= 4 && header[0] === 0x89 && header[1] === 0x50) {
-              mimeType = "image/png";
-            }
+            const mimeType = detectImageMimeType(qm.imageBase64);
             promptBlocks.push({ type: "image" as const, data: qm.imageBase64, mimeType });
             logErr(`Pi-mono: including screenshot image in prompt (${mimeType})`);
           }
