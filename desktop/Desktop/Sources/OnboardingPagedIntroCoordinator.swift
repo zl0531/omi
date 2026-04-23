@@ -1176,7 +1176,7 @@ final class OnboardingPagedIntroCoordinator: ObservableObject {
           ["source_id": "user", "target_id": "goal_\(slug(title))", "label": "prioritizes"]
         ]
       )
-} catch APIError.httpError(let statusCode) where statusCode == 429 {
+    } catch APIError.httpError(let statusCode) where statusCode == 429 {
       logError(
         "OnboardingPagedIntroCoordinator: Goal save rate-limited (429)",
         error: APIError.httpError(statusCode: 429))
@@ -1186,7 +1186,6 @@ final class OnboardingPagedIntroCoordinator: ObservableObject {
       await saveGoalLocally(title: title, config: config)
     } catch APIError.unauthorized {
       await saveGoalLocally(title: title, config: config)
-    }
     } catch {
       logError("OnboardingPagedIntroCoordinator: Failed to save onboarding goal", error: error)
       lastActionError = error.localizedDescription
@@ -1253,7 +1252,6 @@ final class OnboardingPagedIntroCoordinator: ObservableObject {
     goalDraft = title
     goalSaved = true
     OnboardingChatPersistence.markGoalCompleted()
-  }
   }
 
   func completeIntro(appState: AppState) async -> Bool {
