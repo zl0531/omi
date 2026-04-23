@@ -950,6 +950,15 @@ class AuthService {
     // MARK: - Get ID Token (for API calls)
 
     func getIdToken(forceRefresh: Bool = false) async throws -> String {
+        // Development mode: return dev token
+        if shouldSkipAuth() {
+            NSLog("OMI AUTH: shouldSkipAuth=true, returning dev-token")
+            return "dev-token"
+        }
+        NSLog("OMI AUTH: shouldSkipAuth=false, proceeding with real auth (args=%@, userId=%@)",
+              CommandLine.arguments.joined(separator: " "),
+              UserDefaults.standard.string(forKey: kAuthUserId) ?? "nil")
+
         // Get the expected user ID (the currently signed-in user)
         let expectedUserId = UserDefaults.standard.string(forKey: kAuthUserId)
 

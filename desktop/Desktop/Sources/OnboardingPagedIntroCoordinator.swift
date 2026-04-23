@@ -1176,19 +1176,24 @@ final class OnboardingPagedIntroCoordinator: ObservableObject {
           ["source_id": "user", "target_id": "goal_\(slug(title))", "label": "prioritizes"]
         ]
       )
-    } catch APIError.httpError(let statusCode) where statusCode == 429 {
+} catch APIError.httpError(let statusCode) where statusCode == 429 {
       logError(
         "OnboardingPagedIntroCoordinator: Goal save rate-limited (429)",
         error: APIError.httpError(statusCode: 429))
       lastActionError =
         "Too many requests right now. Skip this step or try again in a moment."
+    } catch AuthError.notSignedIn {
+      await saveGoalLocally(title: title, config: config)
+    } catch APIError.unauthorized {
+      await saveGoalLocally(title: title, config: config)
+    }
     } catch {
       logError("OnboardingPagedIntroCoordinator: Failed to save onboarding goal", error: error)
       lastActionError = error.localizedDescription
     }
   }
 
-  /// Create a goal with retry/backoff for transient 429s. The onboarding flow can saturate
+/// Create a goal with retry/backoff for transient 429s. The onboarding flow can saturate
   /// Cloud Armor's per-Authorization limit through the local-file memory batch import that
   /// runs in parallel; this gives the limiter time to drain before failing the user.
   private func createGoalWithRetry(
@@ -1221,6 +1226,34 @@ final class OnboardingPagedIntroCoordinator: ObservableObject {
       }
     }
     throw lastError ?? APIError.httpError(statusCode: 429)
+  }
+
+  private func saveGoalLocally(
+    title: String,
+    config: (goalType: GoalType, targetValue: Double, unit: String?)
+  ) async {
+    let localRecord = GoalRecord(
+      backendId: nil,
+      backendSynced: false,
+      title: title,
+      goalDescription: "Added from onboarding",
+      goalType: config.goalType.rawValue,
+      targetValue: config.targetValue,
+      currentValue: 0,
+      minValue: 0,
+      maxValue: 100,
+      unit: config.unit,
+      isActive: true,
+      completedAt: nil,
+      deleted: false,
+      createdAt: Date(),
+      updatedAt: Date()
+    )
+    _ = try? await GoalStorage.shared.insertLocalGoal(localRecord)
+    goalDraft = title
+    goalSaved = true
+    OnboardingChatPersistence.markGoalCompleted()
+  }
   }
 
   func completeIntro(appState: AppState) async -> Bool {

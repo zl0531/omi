@@ -13,7 +13,17 @@ console.info = console.error;
 console.warn = console.error;
 console.debug = console.error;
 
+process.on('unhandledRejection', (reason) => {
+  console.error(`[patched-acp] unhandledRejection: ${reason}`);
+});
+process.on('uncaughtException', (err) => {
+  console.error(`[patched-acp] uncaughtException: ${err.message}\n${err.stack}`);
+});
+
+console.error(`[patched-acp] Importing ClaudeAcpAgent...`);
 import { ClaudeAcpAgent, runAcp } from "@zed-industries/claude-agent-acp/dist/acp-agent.js";
+console.error(`[patched-acp] Import done. Env: ANTHROPIC_BASE_URL=${process.env.ANTHROPIC_BASE_URL}, ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY ? "(set)" : "(unset)"}, NODE_ENV=${process.env.NODE_ENV}`);
+console.error(`[patched-acp] runAcp starting...`);
 
 // Patch newSession to:
 // 1. Pass model via setModel() after session creation
@@ -31,7 +41,9 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
   if (session?.query) {
     const originalNext = session.query.next.bind(session.query);
     session.query.next = async function (...args) {
+      console.error(`[patched-acp] query.next() called`); const start = Date.now();
       const item = await originalNext(...args);
+      console.error(`[patched-acp] query.next() returned after ${Date.now()-start}ms type=${item?.value?.type} subtype=${item?.value?.subtype}`);
       if (
         item.value?.type === "result" &&
         item.value?.subtype === "success"
@@ -55,51 +67,50 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
 // The ACP PromptResponse supports usage (experimental) and _meta for extras.
 const originalPrompt = ClaudeAcpAgent.prototype.prompt;
 ClaudeAcpAgent.prototype.prompt = async function (params) {
-  const result = await originalPrompt.call(this, params);
+  console.error(`[patched-acp] prompt() called sessionId=${params.sessionId} prompt_len=${JSON.stringify(params.prompt).length}`);
+  try {
+    const result = await originalPrompt.call(this, params);
+    console.error(`[patched-acp] prompt() resolved stopReason=${result?.stopReason}`);
 
-  const session = this.sessions?.[params.sessionId];
-  if (session?._lastCostUsd !== undefined) {
-    // usage fields are snake_case (raw Anthropic API format)
-    const u = session._lastUsage ?? {};
-    const inputTokens = u.input_tokens ?? 0;
-    const outputTokens = u.output_tokens ?? 0;
-    const cacheRead = u.cache_read_input_tokens ?? 0;
-    const cacheWrite = u.cache_creation_input_tokens ?? 0;
-    const costUsd = session._lastCostUsd;
+    const session = this.sessions?.[params.sessionId];
+    if (session?._lastCostUsd !== undefined) {
+      const u = session._lastUsage ?? {};
+      const inputTokens = u.input_tokens ?? 0;
+      const outputTokens = u.output_tokens ?? 0;
+      const cacheRead = u.cache_read_input_tokens ?? 0;
+      const cacheWrite = u.cache_creation_input_tokens ?? 0;
+      const costUsd = session._lastCostUsd;
+      const totalTokens = inputTokens + cacheWrite + cacheRead + outputTokens;
+      const modelKeys = Object.keys(session._lastModelUsage ?? {});
+      console.error(
+        `[patched-acp] Usage: model=${modelKeys.join(",") || "unknown"}, cost=$${costUsd}, ` +
+        `input=${inputTokens}, output=${outputTokens}, ` +
+        `cacheWrite=${cacheWrite}, cacheRead=${cacheRead}, total=${totalTokens}`
+      );
+      const augmented = {
+        ...result,
+        usage: { inputTokens, outputTokens, cachedReadTokens: cacheRead, cachedWriteTokens: cacheWrite, totalTokens },
+        _meta: { costUsd },
+      };
+      delete session._lastCostUsd;
+      delete session._lastUsage;
+      delete session._lastModelUsage;
+      return augmented;
+    }
 
-    // Total = new input + cache writes + cache reads + output
-    const totalTokens = inputTokens + cacheWrite + cacheRead + outputTokens;
-
-    const modelKeys = Object.keys(session._lastModelUsage ?? {});
-    console.error(
-      `[patched-acp] Usage: model=${modelKeys.join(",") || "unknown"}, cost=$${costUsd}, ` +
-      `input=${inputTokens}, output=${outputTokens}, ` +
-      `cacheWrite=${cacheWrite}, cacheRead=${cacheRead}, ` +
-      `total=${totalTokens}`
-    );
-
-    const augmented = {
-      ...result,
-      usage: {
-        inputTokens,
-        outputTokens,
-        cachedReadTokens: cacheRead,
-        cachedWriteTokens: cacheWrite,
-        totalTokens,
-      },
-      _meta: { costUsd },
-    };
-    delete session._lastCostUsd;
-    delete session._lastUsage;
-    delete session._lastModelUsage;
-    return augmented;
+    return result;
+  } catch (err) {
+    console.error(`[patched-acp] prompt() rejected: ${err.message}`);
+    throw err;
   }
-
-  return result;
 };
 
 // Run the (now patched) ACP agent
-runAcp();
+try {
+  runAcp();
+} catch (err) {
+  console.error(`[patched-acp] runAcp threw: ${err.message}`);
+}
 
 // Keep process alive
 process.stdin.resume();

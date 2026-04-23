@@ -71,38 +71,54 @@ class ViewModelContainer: ObservableObject {
         let dbAvailable = !databaseInitFailed
 
         // Load shared stores first (both Dashboard and Tasks use these)
+        log("DATA LOAD: Starting parallel loads — tasks, dashboard, apps, memories, chat")
         async let tasks: Void = measurePerfAsync("DATA LOAD: TasksStore") {
+            log("DATA LOAD: TasksStore starting...")
             guard dbAvailable else {
                 log("DATA LOAD: Skipping TasksStore (database unavailable)")
                 return
             }
             await tasksStore.loadTasks()
+            log("DATA LOAD: TasksStore done")
         }
 
         // Load page-specific data in parallel
         async let dashboard: Void = measurePerfAsync("DATA LOAD: Dashboard") {
+            log("DATA LOAD: Dashboard starting...")
             guard dbAvailable else {
                 log("DATA LOAD: Skipping Dashboard (database unavailable)")
                 return
             }
             await dashboardViewModel.loadDashboardData()
+            log("DATA LOAD: Dashboard done")
         }
         // Apps and Chat don't depend on local DB
-        async let apps: Void = measurePerfAsync("DATA LOAD: Apps") { await appProvider.fetchApps() }
+        async let apps: Void = measurePerfAsync("DATA LOAD: Apps") {
+            log("DATA LOAD: Apps starting...")
+            await appProvider.fetchApps()
+            log("DATA LOAD: Apps done")
+        }
         async let memories: Void = measurePerfAsync("DATA LOAD: Memories") {
+            log("DATA LOAD: Memories starting...")
             guard dbAvailable else {
                 log("DATA LOAD: Skipping Memories (database unavailable)")
                 return
             }
             await memoriesViewModel.loadMemories()
+            log("DATA LOAD: Memories done")
         }
         async let chat: Void = measurePerfAsync("DATA LOAD: Chat") {
+            log("DATA LOAD: Chat starting...")
             await chatProvider.initialize()
+            log("DATA LOAD: Chat init done, warmup starting...")
             await chatProvider.warmupBridge()
+            log("DATA LOAD: Chat warmup done")
         }
 
         // Wait for all to complete
+        log("DATA LOAD: Waiting for all parallel tasks...")
         _ = await (tasks, dashboard, apps, memories, chat)
+        log("DATA LOAD: All parallel tasks complete")
 
         // Restore agent sessions from database (reconnect to live tmux sessions)
         if dbAvailable {

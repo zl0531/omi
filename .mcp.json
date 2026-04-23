@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "insforge": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@insforge/mcp@latest"
+      ],
+      "env": {
+        "API_KEY": "ik_your-api-key-here-32-chars-minimum",
+        "API_BASE_URL": "http://localhost:7131"
+      }
+    }
+  }
+}

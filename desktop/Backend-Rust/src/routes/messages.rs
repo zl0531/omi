@@ -7,6 +7,7 @@ use axum::{
     routing::{get, patch},
     Json, Router,
 };
+use chrono;
 
 use crate::auth::AuthUser;
 use crate::models::{
@@ -38,6 +39,14 @@ async fn save_message(
     if request.text.trim().is_empty() {
         tracing::warn!("Empty message text");
         return Err(StatusCode::BAD_REQUEST);
+    }
+
+    if !state.firestore.is_available() {
+        let now = chrono::Utc::now();
+        return Ok(Json(SaveMessageResponse {
+            id: uuid::Uuid::new_v4().to_string(),
+            created_at: now,
+        }));
     }
 
     match state
@@ -77,6 +86,10 @@ async fn get_messages(
         query.limit,
         query.offset
     );
+
+    if !state.firestore.is_available() {
+        return Ok(Json(vec![]));
+    }
 
     match state
         .firestore
@@ -174,4 +187,8 @@ pub fn messages_routes() -> Router<AppState> {
             get(get_messages).post(save_message).delete(delete_messages),
         )
         .route("/v2/messages/:id/rating", patch(rate_message))
+        .route(
+            "/v2/desktop/messages",
+            get(get_messages).post(save_message),
+        )
 }

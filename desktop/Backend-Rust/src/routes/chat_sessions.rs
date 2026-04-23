@@ -28,6 +28,10 @@ async fn create_chat_session(
         request.app_id
     );
 
+    if !state.firestore.is_available() {
+        return Ok(Json(ChatSessionDB::new(request.title, request.app_id)));
+    }
+
     match state
         .firestore
         .create_chat_session(&user.uid, request.title.as_deref(), request.app_id.as_deref())
@@ -55,6 +59,10 @@ async fn get_chat_sessions(
         query.offset,
         query.starred
     );
+
+    if !state.firestore.is_available() {
+        return Ok(Json(vec![]));
+    }
 
     match state
         .firestore

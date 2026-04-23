@@ -101,6 +101,7 @@ actor APIClient {
       } else {
         let authService = await MainActor.run { AuthService.shared }
         let authHeader = try await authService.getAuthHeader()
+        log("APIClient: Authorization header = \(authHeader.prefix(30))...")
         headers["Authorization"] = authHeader
       }
     }
@@ -123,6 +124,7 @@ actor APIClient {
   ) async throws -> T {
     let base = customBaseURL ?? baseURL
     let url = URL(string: base + endpoint)!
+    log("APIClient: GET \(url.absoluteString) requireAuth=\(requireAuth)")
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
     request.allHTTPHeaderFields = try await buildHeaders(requireAuth: requireAuth)
@@ -190,11 +192,14 @@ actor APIClient {
   // MARK: - Request Execution
 
   private func performRequest<T: Decodable>(_ request: URLRequest) async throws -> T {
+    log("APIClient: REQUEST \(request.httpMethod ?? "?") \(request.url?.absoluteString ?? "?")")
     let (data, response) = try await session.data(for: request)
 
     guard let httpResponse = response as? HTTPURLResponse else {
       throw APIError.invalidResponse
     }
+
+    log("APIClient: RESPONSE \(request.httpMethod ?? "?") \(request.url?.path ?? "?") status=\(httpResponse.statusCode)")
 
     // Handle 401 - token might be expired
     if httpResponse.statusCode == 401 {

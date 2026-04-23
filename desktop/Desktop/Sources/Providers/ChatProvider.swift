@@ -720,6 +720,12 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         _ = await ensureBridgeStarted()
     }
 
+    /// Restart the bridge to apply Wanqing LLM settings changes (toggle on/off, key update).
+    func restartBridgeForWanqingToggle() async {
+        acpBridgeStarted = false
+        _ = await ensureBridgeStarted()
+    }
+
     /// Drop a cached ACP session so the next query recreates it with fresh prompt context.
     func invalidateAgentSession(sessionKey: String) async {
         guard acpBridgeStarted else { return }
@@ -793,7 +799,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 : ShortcutSettings.shared.selectedModel
             cachedMainSystemPrompt = mainSystemPrompt
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
-                .init(key: "main", model: ModelQoS.Claude.chat, systemPrompt: mainSystemPrompt),
+.init(key: "main", model: ACPBridge.effectiveChatModel, systemPrompt: mainSystemPrompt),
                 .init(key: "floating", model: floatingModel, systemPrompt: floatingSystemPrompt)
             ])
             return true
@@ -2386,7 +2392,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 sessionKey: isOnboarding ? "onboarding" : (sessionKey ?? "main"),
                 cwd: workingDirectory,
                 mode: chatMode.rawValue,
-                model: model ?? modelOverride,
+                model: (model ?? modelOverride) ?? nil,
                 resume: resume,
                 imageData: effectiveImageData,
                 onTextDelta: textDeltaHandler,
@@ -2422,7 +2428,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 messages[index].text = messageText
                 messages[index].isStreaming = false
                 messages[index].metadata = MessageMetadata(
-                    model: model ?? modelOverride,
+                    model: (model ?? modelOverride) ?? nil,
                     inputTokens: queryResult.inputTokens,
                     outputTokens: queryResult.outputTokens,
                     cacheReadTokens: queryResult.cacheReadTokens,
@@ -2501,7 +2507,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                     text: aiText,
                     step: "chat",
                     toolCalls: toolNames.isEmpty ? nil : toolNames,
-                    model: model ?? modelOverride
+                    model: (model ?? modelOverride) ?? nil
                 )
             }
 

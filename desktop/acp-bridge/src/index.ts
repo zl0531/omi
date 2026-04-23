@@ -212,6 +212,7 @@ async function acpRequest(
 ): Promise<unknown> {
   const id = nextRpcId++;
   const msg = JSON.stringify({ jsonrpc: "2.0", id, method, params });
+  logErr(`acpRequest --> ${method} ${JSON.stringify(params).slice(0, 200)}`);
 
   return new Promise((resolve, reject) => {
     acpResponseHandlers.set(id, { resolve, reject });
@@ -328,7 +329,7 @@ function startAcpProcess(): void {
               message: string;
               data?: unknown;
             };
-            const error = new AcpError(err.message, err.code, err.data);
+            logErr(`acpResponse <-- ERROR code=${err.code} msg=${err.message}`); const error = new AcpError(err.message, err.code, err.data);
             handler.reject(error);
           } else {
             handler.resolve(msg.result);
@@ -735,7 +736,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       isNewSession = false;
       // Update model on reuse if the requested model differs from the session's stored model.
       // Wrap in try-catch: if the session is stale, delete it and fall through to session/new.
-      if (needsModelUpdate(resolved?.existing, requestedModel)) {
+      if (needsModelUpdate(resolved?.existing, undefined)) {
         try {
           await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
           sessions.set(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });

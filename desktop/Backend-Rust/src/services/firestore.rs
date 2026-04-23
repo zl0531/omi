@@ -88,6 +88,11 @@ pub struct FirestoreService {
 }
 
 impl FirestoreService {
+    /// Returns true if GCP credentials are available (service account or metadata server).
+    pub fn is_available(&self) -> bool {
+        self.credentials.is_some()
+    }
+
     /// Create a new Firestore service
     pub async fn new(
         project_id: String,
@@ -114,6 +119,19 @@ impl FirestoreService {
         Ok(service)
     }
 
+    /// Create a no-op placeholder instance that starts without any credentials.
+    /// Firestore-dependent endpoints will return errors, but the process stays alive.
+    pub fn new_placeholder(encryption_secret: Option<Vec<u8>>) -> Self {
+        tracing::warn!("FirestoreService running in placeholder mode - all database operations will fail");
+        Self {
+            client: Client::new(),
+            project_id: "placeholder".to_string(),
+            credentials: None,
+            cached_token: Arc::new(RwLock::new(None)),
+            encryption_secret,
+        }
+    }
+
     /// Load service account credentials from JSON file
     fn load_credentials() -> Result<Option<ServiceAccountCredentials>, Box<dyn std::error::Error + Send + Sync>> {
         // Check GOOGLE_APPLICATION_CREDENTIALS environment variable
@@ -132,8 +150,13 @@ impl FirestoreService {
 
         tracing::info!("Loading service account credentials from: {}", creds_path);
 
-        let creds_json = std::fs::read_to_string(&creds_path)
-            .map_err(|e| format!("Failed to read credentials file {}: {}", creds_path, e))?;
+        let creds_json = match std::fs::read_to_string(&creds_path) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("Failed to read credentials file {}: {} - running without credentials", creds_path, e);
+                return Ok(None);
+            }
+        };
 
         let credentials: ServiceAccountCredentials = serde_json::from_str(&creds_json)
             .map_err(|e| format!("Failed to parse credentials JSON: {}", e))?;
@@ -710,6 +733,9 @@ impl FirestoreService {
         uid: &str,
         conversation: &Conversation,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.credentials.is_none() {
+            return Ok(());
+        }
         let url = format!(
             "{}/{}/{}/{}/{}",
             self.base_url(),
@@ -4679,6 +4705,9 @@ impl FirestoreService {
         &self,
         uid: &str,
     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        if self.credentials.is_none() {
+            return Ok(serde_json::json!({}));
+        }
         let url = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
 
         let response = self
@@ -4703,6 +4732,9 @@ impl FirestoreService {
         fields: Value,
         update_mask: &[&str],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.credentials.is_none() {
+            return Ok(());
+        }
         let mask_params = update_mask
             .iter()
             .map(|f| format!("updateMask.fieldPaths={}", f))
@@ -9671,6 +9703,9 @@ impl FirestoreService {
     ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
         if rows.is_empty() {
             return Ok(0);
+        }
+        if self.credentials.is_none() {
+            return Ok(rows.len());
         }
 
         let mut written = 0;
