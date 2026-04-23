@@ -21,6 +21,11 @@ async fn provision_agent_vm(
 ) -> Result<Json<ProvisionAgentResponse>, StatusCode> {
     tracing::info!("Agent VM provision request for user {}", user.uid);
 
+    if !state.firestore.is_available() {
+        tracing::warn!("Agent VM provision skipped: Firestore not available (no GCP credentials)");
+        return Err(StatusCode::SERVICE_UNAVAILABLE);
+    }
+
     // 1. Check if user already has a VM
     match state.firestore.get_agent_vm(&user.uid).await {
         Ok(Some(vm)) => {
@@ -164,6 +169,11 @@ async fn get_agent_status(
     user: AuthUser,
 ) -> Result<Json<Option<AgentStatusResponse>>, StatusCode> {
     tracing::info!("Agent VM status request for user {}", user.uid);
+
+    if !state.firestore.is_available() {
+        tracing::warn!("Agent VM status skipped: Firestore not available (no GCP credentials)");
+        return Ok(Json(None));
+    }
 
     match state.firestore.get_agent_vm(&user.uid).await {
         Ok(Some(vm)) => {

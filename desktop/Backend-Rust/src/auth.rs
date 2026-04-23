@@ -114,6 +114,14 @@ impl FirebaseAuth {
 
     /// Verify a Firebase ID token and extract the user ID and name
     pub async fn verify_token(&self, token: &str) -> Result<(String, Option<String>, Option<String>), AuthError> {
+        // Development mode: accept a special dev token
+        if token == "dev-token" {
+            return Ok((
+                "dev-user".to_string(),
+                Some("Dev User".to_string()),
+                Some("dev@local".to_string()),
+            ));
+        }
         // Decode header to get kid
         let header = decode_header(token).map_err(|e| AuthError {
             error: "invalid_token".to_string(),
@@ -178,9 +186,12 @@ where
             .headers
             .get("Authorization")
             .and_then(|h| h.to_str().ok())
-            .ok_or_else(|| AuthError {
-                error: "missing_token".to_string(),
-                message: "Authorization header required".to_string(),
+            .ok_or_else(|| {
+                tracing::warn!("AUTH: missing Authorization header, path={}", parts.uri.path());
+                AuthError {
+                    error: "missing_token".to_string(),
+                    message: "Authorization header required".to_string(),
+                }
             })?;
 
         // Extract bearer token
@@ -201,7 +212,9 @@ where
             })?;
 
         // Verify token
+        tracing::info!("AUTH: verifying token (first 20 chars): {}... path={}", &token[..token.len().min(20)], parts.uri.path());
         let (uid, name, email) = firebase_auth.0.verify_token(token).await?;
+        tracing::info!("AUTH: token verified, uid={}", uid);
 
         Ok(AuthUser { uid, name, email })
     }

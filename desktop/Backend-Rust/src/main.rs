@@ -65,7 +65,7 @@ async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "omi_desktop_backend=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "omi_desktop_backend=info,tower_http=debug".into()),
         )
         // Stdout layer
         .with(

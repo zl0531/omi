@@ -15,22 +15,24 @@ actor AgentVMService {
             return
         }
         isRunning = true
+        log("AgentVMService: Starting ensureProvisioned...")
 
         Task {
             defer { isRunning = false }
+            log("AgentVMService: Task started, calling getAgentStatus()...")
 
-            // Check backend first
             do {
                 let status = try await APIClient.shared.getAgentStatus()
+                log("AgentVMService: getAgentStatus returned status=\(status?.status ?? "nil")")
                 if let status = status, status.status == "ready", let ip = status.ip {
                     log("AgentVMService: VM already ready — vmName=\(status.vmName) ip=\(ip)")
-                    // Only upload if the VM doesn't have a database yet
                     if await checkVMNeedsDatabase(vmIP: ip, authToken: status.authToken) {
                         await uploadDatabase(vmIP: ip, authToken: status.authToken)
                     } else {
                         log("AgentVMService: VM already has database, skipping upload")
                     }
                     await startIncrementalSync(vmIP: ip, authToken: status.authToken)
+                    log("AgentVMService: ensureProvisioned done (VM ready)")
                     return
                 }
                 if let status = status,
@@ -44,14 +46,23 @@ actor AgentVMService {
                         }
                         await startIncrementalSync(vmIP: ip, authToken: result.authToken)
                     }
+                    log("AgentVMService: ensureProvisioned done (polling done)")
                     return
                 }
-                // status is nil or error — fall through to provision
+                log("AgentVMService: No VM found (status=\(status?.status ?? "nil")), skipping provisioning")
+                log("AgentVMService: ensureProvisioned done (skipped)")
+            } catch let error as APIError {
+                if case .httpError(let statusCode) = error, statusCode == 503 {
+                    log("AgentVMService: Backend unavailable (503), skipping VM provisioning")
+                    log("AgentVMService: ensureProvisioned done (503)")
+                    return
+                }
+                log("AgentVMService: Status check failed — \(error.localizedDescription), skipping provisioning")
+                log("AgentVMService: ensureProvisioned done (error)")
             } catch {
-                log("AgentVMService: Status check failed — \(error.localizedDescription), will provision")
+                log("AgentVMService: Status check failed — \(error.localizedDescription), skipping provisioning")
+                log("AgentVMService: ensureProvisioned done (error)")
             }
-
-            await runPipeline()
         }
     }
 
@@ -124,6 +135,12 @@ actor AgentVMService {
                     return nil
                 }
                 log("AgentVMService: Poll \(attempt)/\(maxAttempts) — status=\(status?.status ?? "none")")
+            } catch let error as APIError {
+                if case .httpError(let statusCode) = error, statusCode == 503 {
+                    log("AgentVMService: Backend unavailable (503), aborting poll")
+                    return nil
+                }
+                log("AgentVMService: Poll error — \(error.localizedDescription)")
             } catch {
                 log("AgentVMService: Poll error — \(error.localizedDescription)")
             }

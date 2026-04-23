@@ -88,6 +88,11 @@ pub struct FirestoreService {
 }
 
 impl FirestoreService {
+    /// Returns true if GCP credentials are available (service account or metadata server).
+    pub fn is_available(&self) -> bool {
+        self.credentials.is_some()
+    }
+
     /// Create a new Firestore service
     pub async fn new(
         project_id: String,
@@ -728,6 +733,9 @@ impl FirestoreService {
         uid: &str,
         conversation: &Conversation,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.credentials.is_none() {
+            return Ok(());
+        }
         let url = format!(
             "{}/{}/{}/{}/{}",
             self.base_url(),
@@ -4697,6 +4705,9 @@ impl FirestoreService {
         &self,
         uid: &str,
     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        if self.credentials.is_none() {
+            return Ok(serde_json::json!({}));
+        }
         let url = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
 
         let response = self
@@ -4721,6 +4732,9 @@ impl FirestoreService {
         fields: Value,
         update_mask: &[&str],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.credentials.is_none() {
+            return Ok(());
+        }
         let mask_params = update_mask
             .iter()
             .map(|f| format!("updateMask.fieldPaths={}", f))
@@ -9689,6 +9703,9 @@ impl FirestoreService {
     ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
         if rows.is_empty() {
             return Ok(0);
+        }
+        if self.credentials.is_none() {
+            return Ok(rows.len());
         }
 
         let mut written = 0;

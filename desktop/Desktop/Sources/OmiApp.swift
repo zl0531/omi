@@ -29,6 +29,13 @@ func shouldSkipOnboarding() -> Bool {
   return CommandLine.arguments.contains("--skip-onboarding")
 }
 
+/// Check for --dev-auth flag or UserDefaults dev auth state to bypass Google/Apple sign-in
+func shouldSkipAuth() -> Bool {
+  if CommandLine.arguments.contains("--dev-auth") { return true }
+  if UserDefaults.standard.string(forKey: "auth_userId") == "dev-user" { return true }
+  return false
+}
+
 // Simple observable state without Firebase types
 @MainActor
 class AuthState: ObservableObject {
@@ -46,17 +53,31 @@ class AuthState: ObservableObject {
   @Published var userEmail: String?
 
   private init() {
-    // Restore auth state from UserDefaults immediately on init (before UI renders)
-    let savedSignedIn = UserDefaults.standard.bool(forKey: Self.kAuthIsSignedIn)
-    let savedEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
-    self.isSignedIn = savedSignedIn
-    self.userEmail = savedEmail
-    // Show loading splash while Firebase restores session (only if user was previously signed in)
-    self.isRestoringAuth = savedSignedIn
-    NSLog(
-      "OMI AuthState: Initialized with savedSignedIn=%@, email=%@, isRestoringAuth=%@",
-      savedSignedIn ? "true" : "false", savedEmail ?? "nil", self.isRestoringAuth ? "true" : "false"
-    )
+    // Development mode: automatically sign in as dev user
+    let devAuth = shouldSkipAuth()
+    
+    if devAuth {
+        // Set dev user as signed in
+        UserDefaults.standard.set(true, forKey: Self.kAuthIsSignedIn)
+        UserDefaults.standard.set("dev@local", forKey: Self.kAuthUserEmail)
+        UserDefaults.standard.set("dev-user", forKey: Self.kAuthUserId)
+        self.isSignedIn = true
+        self.userEmail = "dev@local"
+        self.isRestoringAuth = false
+        NSLog("OMI AuthState: DEV MODE - auto signed in as dev@local")
+    } else {
+        // Restore auth state from UserDefaults immediately on init (before UI renders)
+        let savedSignedIn = UserDefaults.standard.bool(forKey: Self.kAuthIsSignedIn)
+        let savedEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
+        self.isSignedIn = savedSignedIn
+        self.userEmail = savedEmail
+        // Show loading splash while Firebase restores session (only if user was previously signed in)
+        self.isRestoringAuth = savedSignedIn
+        NSLog(
+          "OMI AuthState: Initialized with savedSignedIn=%@, email=%@, isRestoringAuth=%@",
+          savedSignedIn ? "true" : "false", savedEmail ?? "nil", self.isRestoringAuth ? "true" : "false"
+        )
+    }
   }
 
   func update(isSignedIn: Bool, userEmail: String? = nil) {

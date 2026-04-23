@@ -2392,7 +2392,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 sessionKey: isOnboarding ? "onboarding" : (sessionKey ?? "main"),
                 cwd: workingDirectory,
                 mode: chatMode.rawValue,
-                model: model ?? modelOverride,
+                model: (model ?? modelOverride) ?? nil,
                 resume: resume,
                 imageData: effectiveImageData,
                 onTextDelta: textDeltaHandler,
@@ -2428,7 +2428,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 messages[index].text = messageText
                 messages[index].isStreaming = false
                 messages[index].metadata = MessageMetadata(
-                    model: model ?? modelOverride,
+                    model: (model ?? modelOverride) ?? nil,
                     inputTokens: queryResult.inputTokens,
                     outputTokens: queryResult.outputTokens,
                     cacheReadTokens: queryResult.cacheReadTokens,
@@ -2507,7 +2507,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                     text: aiText,
                     step: "chat",
                     toolCalls: toolNames.isEmpty ? nil : toolNames,
-                    model: model ?? modelOverride
+                    model: (model ?? modelOverride) ?? nil
                 )
             }
 

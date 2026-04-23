@@ -10,18 +10,21 @@ Build and run the Omi Desktop dev app with local backend services.
 
 Options (via environment variables):
   OMI_SKIP_BACKEND=1      Skip starting Rust backend (use remote backend via OMI_API_URL)
-  OMI_SKIP_AUTH=1          Skip starting Python auth service (use remote auth via OMI_AUTH_URL)
+  OMI_SKIP_AUTH=***          Skip starting Python auth service (use remote auth via OMI_AUTH_URL)
   OMI_SKIP_TUNNEL=1        Skip Cloudflare tunnel (use OMI_API_URL from .env directly)
-  AUTH_PORT=10200           Auth service port (default: 10200)
+  AUTH_PORT=***           Auth service port (default: 10200)
   PORT=10201                Rust backend port (default: 10201, never use 8080)
   OMI_APP_NAME="Omi Dev"   App name (default: "Omi Dev")
   OMI_PYTHON_API_URL="..."  Python backend URL (subscriptions, payments, etc; default: https://api.omi.me)
   OMI_SIGN_IDENTITY="..."  Code signing identity (auto-detected if not set)
   OMI_ENABLE_LOCAL_AUTOMATION=1  Enable agent-swift automation bridge
 
+Options (via command line):
+  --dev-auth            Skip Google/Apple sign-in and use dev token (for local development)
+
 Required files:
   Backend-Rust/.env         Environment variables (copy from ../.env.example)
-  Backend-Rust/google-credentials.json  GCP service account key
+  Backend-Rust/google-credentials.json  GCP service account key (optional — omit to run without Google services)
 
 Required tools:
   cargo, xcrun/swift, python3, npm, node, codesign, cloudflared (unless skipped)
@@ -132,7 +135,14 @@ if [ "$URL_SCHEME" != "$EXPECTED_URL_SCHEME" ]; then
     echo "ERROR: APP_NAME '$APP_NAME' must use URL scheme '$EXPECTED_URL_SCHEME' (got '$URL_SCHEME')"
     exit 1
 fi
-AUTOMATION_ARGS=()
+AUTOMATION_ARGS=(--dev-auth)
+echo ">>> DEV MODE: Skipping Google/Apple sign-in (default for local builds)"
+# Check for --dev-auth flag to skip Google/Apple sign-in
+for arg in "$@"; do
+    if [ "$arg" = "--dev-auth" ]; then
+        break
+    fi
+done
 if [ "${OMI_ENABLE_LOCAL_AUTOMATION:-0}" = "1" ]; then
     AUTOMATION_PORT="${OMI_AUTOMATION_PORT:-47777}"
     AUTOMATION_ARGS+=(--automation-bridge "--automation-port=$AUTOMATION_PORT")
@@ -289,17 +299,12 @@ fi
 BACKEND_PORT="${PORT:-10201}"
 export PORT="$BACKEND_PORT"
 
-# Validate credentials (needed for both backend and auth)
+# Validate credentials (optional — backend works without Google services)
 CREDS_PATH="$BACKEND_DIR/google-credentials.json"
 if [ "${OMI_SKIP_BACKEND:-0}" != "1" ] && [ ! -f "$CREDS_PATH" ]; then
-    echo "ERROR: Missing credentials file: $CREDS_PATH"
-    echo ""
-    echo "  Option A: Place your GCP service account key here:"
+    echo "WARNING: Missing credentials file: $CREDS_PATH"
+    echo "  Google services will be unavailable. To add credentials:"
     echo "    cp /path/to/google-credentials.json $CREDS_PATH"
-    echo ""
-    echo "  Option B: Skip the local backend and use a remote one:"
-    echo "    OMI_SKIP_BACKEND=1 ./run.sh"
-    exit 1
 fi
 if [ -f "$CREDS_PATH" ]; then
     export GOOGLE_APPLICATION_CREDENTIALS="$CREDS_PATH"
@@ -367,7 +372,9 @@ if [ "${OMI_SKIP_AUTH:-0}" != "1" ]; then
             if [ -f "$BACKEND_DIR/.env" ]; then
                 set -a; source "$BACKEND_DIR/.env"; set +a
             fi
-            export GOOGLE_APPLICATION_CREDENTIALS="$CREDS_PATH"
+            if [ -f "$CREDS_PATH" ]; then
+                export GOOGLE_APPLICATION_CREDENTIALS="$CREDS_PATH"
+            fi
             export BASE_API_URL="http://localhost:$AUTH_PORT"
             .venv/bin/uvicorn main:app --host 0.0.0.0 --port "$AUTH_PORT" --log-level warning &
             echo $!
@@ -596,8 +603,8 @@ fi
 
 auth_debug "BEFORE signing: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 
-step "Removing extended attributes (xattr -cr)..."
-xattr -cr "$APP_BUNDLE"
+step "Removing extended attributes..."
+xattr -c -r "$APP_BUNDLE" 2>/dev/null || true
 
 step "Signing app with hardened runtime..."
 # Auto-detect a stable signing identity so TCC permissions persist across rebuilds.
@@ -690,7 +697,7 @@ else
 fi
 
 step "Removing quarantine attributes..."
-xattr -cr "$APP_BUNDLE"
+xattr -c -r "$APP_BUNDLE" 2>/dev/null || true
 
 step "Installing to /Applications/..."
 # Install to /Applications/ so "Quit & Reopen" (after granting screen recording
@@ -747,6 +754,14 @@ echo "========================================"
 echo ""
 
 auth_debug "BEFORE launch: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
+
+# Inject dev auth state directly into UserDefaults so the app starts signed in as dev-user
+# This is equivalent to --dev-auth but works even when `open` reuses an existing instance
+defaults write "$BUNDLE_ID" auth_isSignedIn -bool true
+defaults write "$BUNDLE_ID" auth_userEmail "dev@local"
+defaults write "$BUNDLE_ID" auth_userId "dev-user"
+substep "Injected dev auth into UserDefaults ($BUNDLE_ID)"
+
 if [ "${#AUTOMATION_ARGS[@]}" -gt 0 ]; then
     open "$APP_PATH" --args "${AUTOMATION_ARGS[@]}" || "$APP_PATH/Contents/MacOS/$BINARY_NAME" "${AUTOMATION_ARGS[@]}" &
 else
